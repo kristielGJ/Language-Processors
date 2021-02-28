@@ -1,0 +1,241 @@
+options {
+  STATIC = false;
+}
+
+PARSER_BEGIN(LPLParser)
+  package lpl.parser;
+
+import lpl.ast.*;
+import java.lang.invoke.VarHandle;import java.util.*;
+
+public class LPLParser {
+  // JavaCC will generate the body of this class
+}
+PARSER_END(LPLParser)
+
+SKIP : /* White-space and comments are already defined here */
+{
+    " "
+  | "\t"
+  | "\n"
+  | "\r"
+  | "\f"
+  | < "//" (~["\n","\r"])* ("\n"|"\r"|"\r\n") >//comments
+  | <"/*" (~["*"])* "*" ("*" | (~["*","/"] (~["*"])* "*"))* "/">
+}
+
+TOKEN : /* Define the LPL tokens here. */
+{
+// CHECK: how many terminal symbols in the LPL grammar?
+  < LBR: "(" >
+| < RBR: ")" >
+| < LCBR: "{" >
+| < RCBR: "}" >
+| < LSBR: "[" >
+| < RSBR: "]" >
+| < DEF: "def" >
+| < ISNULL: "isnull" >
+| < LENGTH: ".length" >
+| < INT: "int" >
+| < OUTPUT: "output" >
+| < BOOL: "bool" >
+| < UNIT: "unit" >
+| < OUTCHAR: "outchar" >
+| < RETURN: "return" >
+| < NEW: "new" >
+| < IF: "if" >
+| < WHILE: "while" >
+| < ELSE: "else" >
+| < NOT: "!" >
+| < TRUE: "true" >
+| < FALSE: "false" >
+| < SEMICOLON: ";" >
+| < AND : "&&" >
+| < OR : "||" >
+| < LESSTHAN: "<" >
+| < EQUALTO: "==" >
+| < EQUALS: "=" >
+| < DIVIDE: "/" >
+| < PLUS: "+" >
+| < MINUS: "-" >
+| < MULTIPLY: "*" >
+| < COMMA: "," >
+| < INTEGER_LITERAL:("-")? (["0"-"9"])+ >
+
+
+// TODO: check after running Parser
+| < ID: ["a"-"z", "A"-"Z"](["a"-"z","A"-"Z"] |["0"-"9"] | "_")* > //Gera: sequence of leters digits and underscores starting with a letter
+}
+
+/************************************
+ * The LPL grammar starts here *
+ ************************************/
+
+
+// this is complete
+public Program nt_Program() :
+{
+  FunDef mainDef, fd;
+  List<FunDef> fds = new LinkedList<FunDef>();
+}
+{
+  mainDef=nt_FunDef() (fd=nt_FunDef() { fds.add(fd); })*//parsing actions and semantic
+  <EOF>
+  { return new Program(mainDef, fds); }//semmantic action
+}
+
+public FunDef nt_FunDef() :
+{
+ List<Formal> fs = new LinkedList<Formal>();
+  List<VarDecl> vs = new LinkedList<VarDecl>();
+  List<Stm> ss = new LinkedList<Stm>();
+  Type type;
+  Token token;
+  VarDecl v;
+  Stm stm;
+}
+{
+  <DEF> type = nt_Type() token  = <ID> <LBR> fs = nt_FormalList()<RBR> <LCBR>(v = nt_VarDecl(){vs.add(v);})* (stm = nt_Statement(){ss.add(stm);})* <RCBR>
+  { return new FunDef(type,token.image,fs,vs,ss); }
+}
+
+// this is complete
+public List<Formal> nt_FormalList() :
+{
+  Formal f;
+  List<Formal> fs = new LinkedList<Formal>();
+  Type type;
+  Token t;
+}
+{
+    type=nt_Type() t=<ID>
+    { f = new Formal(type, t.image); fs.add(f); }
+    (f=nt_FormalRest() { fs.add(f); })*
+    { return fs; }
+  | {} // empty list
+    { return fs; }
+}
+
+// this is complete except for semantic actions to build the AST
+public Formal nt_FormalRest() :
+{
+ Type type;
+ Token t;
+}
+{
+  <COMMA> type  = nt_Type() t =<ID>{ return  new Formal(type,t.image); }
+}
+
+public Type nt_Type() :
+{
+ Type type;
+}
+{
+    <INT> {type = new TypeInt();} (LOOKAHEAD(2)<LSBR><RSBR>{type = new TypeArray(type);})*       { return type; }
+    | <BOOL> {type =  new TypeBoolean();} (LOOKAHEAD(2)<LSBR><RSBR>{type = new TypeArray(type);})*   { return type; }
+    | <UNIT> {type = new TypeUnit();} (LOOKAHEAD(2)<LSBR><RSBR>{type = new TypeArray(type);})*   { return type; }
+
+
+}
+
+
+public VarDecl nt_VarDecl() :
+{
+ Type type;
+ Token t;
+}
+{
+  type = nt_Type() t =<ID> <SEMICOLON> { return new VarDecl(type,t.image); }
+}
+
+public Stm nt_Statement() :
+{
+ List<Stm> ss = new LinkedList<Stm>();
+ List<Exp> es = new LinkedList<Exp>();
+ Exp exp;
+ Exp exp1;
+ Stm stm;
+ Stm stm1;
+
+ PrimaryExp p;
+ Token t;
+
+}
+{
+    <LCBR> ( stm=nt_Statement() {ss.add(stm);})* <RCBR> { return new StmBlock(ss) ; }
+    |LOOKAHEAD(2)t = <ID>(<EQUALS> exp = nt_Exp() <SEMICOLON> { return new StmAssign(t.image, exp); }  |<LBR>es = nt_ExpList()<RBR> <SEMICOLON>{ return new StmCall(t.image,es) ; } )
+    |p = nt_PrimaryExp() <LSBR> exp = nt_Exp() <RSBR> <EQUALS> exp1 =nt_Exp()<SEMICOLON> { return new StmArrayAssign(p,exp,exp1); }
+    |<IF> <LBR> exp= nt_Exp() <RBR>stm=  nt_Statement() <ELSE> stm1 = nt_Statement() { return new StmIf(exp,stm,stm1); }
+    |<WHILE><LBR> exp = nt_Exp() <RBR> stm= nt_Statement(){ return new StmWhile(exp,stm);}
+    |<OUTPUT>exp = nt_Exp() <SEMICOLON> { return new StmOutput(exp); }
+    |<OUTCHAR>exp =nt_Exp() <SEMICOLON> { return new StmOutchar(exp); }
+    |<RETURN> exp = nt_Exp() <SEMICOLON> { return new StmReturn(exp); }
+}
+
+public Exp nt_Exp() :
+{
+ Token t;
+ Op op;
+ List<Exp> es = new LinkedList<Exp>();
+ Exp exp;
+ PrimaryExp p;
+ PrimaryExp p1;
+
+}
+{
+    LOOKAHEAD(3)t=<ID> <LBR> es=nt_ExpList() <RBR>{ return new ExpCall(t.image,es); }
+    |p=nt_PrimaryExp()(op=nt_Op() p1=nt_PrimaryExp(){return new ExpOp(p,op,p1);}|<LSBR> exp=nt_Exp() <RSBR>{return new ExpArrayLookup(p,exp);}| <LENGTH> {return new ExpArrayLength(p) ;}  | {return new ExpPrimaryExp(p);})
+}
+
+public Op nt_Op() :
+{}
+{
+   <AND>    { return Op.AND; }
+   |<OR> {     return Op.OR; }
+   |<LESSTHAN> { return Op.LESSTHAN; }
+   |<EQUALTO> { return Op.EQUALS; }
+   |<DIVIDE>{ return Op.DIV; }
+   |<MULTIPLY>{ return Op.TIMES; }
+   |<PLUS>{ return Op.PLUS; }
+   |<MINUS>{ return Op.MINUS; }
+}
+
+public PrimaryExp nt_PrimaryExp() :
+{
+ Token t;
+ Type type;
+ Exp exp;
+ PrimaryExp p;
+}
+{
+    LOOKAHEAD(3)
+    t =<INTEGER_LITERAL> { return new PrimaryExpInteger(Integer.parseInt(t.image)); }
+    |<TRUE>{ return new PrimaryExpTrue(); }
+    |<FALSE>{ return new PrimaryExpFalse(); }
+    |t =<ID>{ return new PrimaryExpVar(t.image); }
+    |<NEW>type=  nt_Type() <LSBR> exp = nt_Exp() <RSBR>{ return new PrimaryExpNewArray(type, exp); }
+    |<NOT> p =nt_PrimaryExp(){ return new PrimaryExpNot(p); }
+    |<ISNULL> p =nt_PrimaryExp() {return new PrimaryExpIsnull(p);}
+    |<LBR>exp = nt_Exp() <RBR>{ return new PrimaryExpExp(exp); }
+
+
+}
+
+public List<Exp> nt_ExpList() :
+{
+ Exp e;
+ List<Exp> elst = new LinkedList<Exp>();
+}
+{
+
+  e= nt_Exp(){elst.add(e);} ( e=nt_ExpRest(){elst.add(e);})*{ return elst; }
+  |{} {return elst ;}
+}
+
+public Exp nt_ExpRest() :
+{
+  Exp e;
+}
+{
+  <COMMA> e =nt_Exp(){ return e; }
+}
